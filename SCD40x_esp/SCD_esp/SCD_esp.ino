@@ -1,6 +1,3 @@
-// This code is based on Sensirion's Arduino Snippets
-// Check https://github.com/Sensirion/arduino-snippets for the most recent version.
-
 #include "esp_timer.h"
 #include "Sensirion_GadgetBle_Lib.h"
 
