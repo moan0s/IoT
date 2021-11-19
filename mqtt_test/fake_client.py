@@ -7,8 +7,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def calc_temp(offset=0):
-    temp = np.sin(time.time()+offset%(3600)*2*np.pi)*5+20
+def calc_temp(amplitude=5, mean=20, offset=0, period=900):
+    """
+    amplitude: amplitude of temperature changes
+    mean: mean of the simulated temperature
+    offset: offset of the signal in seconds
+    period: periond time in seconds
+    """
+    temp = np.sin((time.time()+offset)%(period)*2*np.pi)*amplitude+mean
     return temp
 
 def on_connect(client, userdata, flags, rc):
@@ -28,5 +34,5 @@ client.loop_start()
 while True:
     time.sleep(2)
     client.publish("sensors/temperature", calc_temp())
-    client.publish("sensors/temperature2", calc_temp(180))
+    client.publish("sensors/temperature2", calc_temp(offset=180))
 
