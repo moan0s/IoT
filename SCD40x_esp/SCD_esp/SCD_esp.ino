@@ -1,7 +1,20 @@
 #include "esp_timer.h"
 #include "Sensirion_GadgetBle_Lib.h"
+#include "secrets.h"
 
 #include <Wire.h>
+
+#include "WiFi.h"
+#include <PubSubClient.h>
+
+#define TOPIC "sensors"
+
+const char* ssid = SECRET_SSID;
+const char* password =  SECRET_WIFI_PASS;
+const char* mqtt_server = "check.hyteck.de";
+#define MQTT_SERIAL_PUBLISH_CH "/sensors/"
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 // SCD41
 const int16_t SCD_ADDRESS = 0x62;
@@ -15,12 +28,72 @@ GadgetBle gadgetBle = GadgetBle(GadgetBle::DataType::T_RH_CO2);
 
 bool calibrationNeeded = false;
 
+
+
+void setup_wifi() {
+  delay(10);
+  // We start by connecting to a WiFi network
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(2000);
+    if(WiFi.status() ==4){
+      Serial.println("Connection failed");
+    }
+    if(WiFi.status() == 6){
+      Serial.println("Disconnected");
+    }
+    if(WiFi.status() == 1){
+      Serial.print(ssid);
+      Serial.println(":SSID not available");
+    }
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Create a random client ID
+    String clientId = "ESP32Client-";
+    clientId += String(random(0xffff), HEX);
+    // Attempt to connect
+    if (client.connect(clientId.c_str(), SECRET_BROKER_USERNAME, SECRET_BROKER_PASSWORD)) {
+      Serial.println("connected");
+      Serial.print("Connection status:");
+      Serial.println(client.connected());
+      delay(1000);
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
+
+
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(460800);
   // wait for serial connection from PC
   // comment the following line if you'd like the output
   // without waiting for the interface being ready
   while(!Serial);
+  
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+  reconnect();
 
   // Initialize the GadgetBle Library
   gadgetBle.begin();
@@ -46,6 +119,7 @@ void setup() {
   // wait for first measurement to be finished
   delay(2000);
   startTime = esp_timer_get_time();
+  Serial.println("Ending setup");
 }
 
 void loop() {
@@ -139,6 +213,7 @@ void measure_and_report() {
   // convert RH in %
   humidity = 100 * (float)((uint16_t)data[6] << 8 | data[7]) / 65536;
 
+  // Write values to serial
   Serial.print(co2);
   Serial.print("\t");
   Serial.print(temperature);
@@ -146,10 +221,33 @@ void measure_and_report() {
   Serial.print(humidity);
   Serial.println();
 
+  // BLE publish
   gadgetBle.writeCO2(co2);
   gadgetBle.writeTemperature(temperature);
   gadgetBle.writeHumidity(humidity);
 
   gadgetBle.commit();
+  
+  // MQTT publish
   lastMmntTime = esp_timer_get_time();
+  if (!client.connected()) {
+    reconnect();
+  }
+  char co2_char[8]; // Buffer big enough for 7-character float
+  dtostrf(co2, 6, 2, co2_char);
+  if (not(client.publish("sensors/co2", co2_char))){
+    Serial.println("CO2 Publish failed");
+  }
+  
+  char temp_char[8]; // Buffer big enough for 7-character float
+  dtostrf(temperature, 6, 2, temp_char);
+  if (not(client.publish("sensors/temperature", temp_char))){
+    Serial.println("Temperature Publish failed");
+  }
+  
+  char humidity_char[8]; // Buffer big enough for 7-character float
+  dtostrf(humidity, 6, 2, humidity_char);
+  if (not(client.publish("sensors/humidity", humidity_char))){
+    Serial.println("Humidity Publish failed");
+  }
 }
