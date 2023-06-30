@@ -5,19 +5,25 @@
 #include <PubSubClient.h>
 
 #define TOPIC "sensors"
+#define MQTT_SERIAL_PUBLISH_CH "/sensors/"
 
+const int analog_channel_pin= 35;
 const char* ssid = SECRET_SSID;
 const char* password =  SECRET_WIFI_PASS;
 const char* mqtt_server = "s3.hyteck.de";
-#define MQTT_SERIAL_PUBLISH_CH "/sensors/"
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 
 
-// GadgetBle workflow
+float read_value = 0;
+float voltage = 0;
+float temperature = 0;
+
+
 static double lastMmntTime = 0;
 static double lastRestartTime = 0;
-static float mmntIntervalUs = 5000000;
+static float mmntIntervalUs = 1*1000000;
 static double restartIntervalUs = 60*60*1000000.0;
 static double calibrationTimeUs = 30*1000000.0; // should be alt least 3 min
 static double startTime = 0; 
@@ -101,20 +107,19 @@ void initMQTTPush(){
 
 
 void setup() {
-  lastRestartTime = esp_timer_get_time();
   Serial.begin(115200);
-  // wait for serial connection from PC
-  // comment the following line if you'd like the output
-  // without waiting for the interface being ready
   while(!Serial);
-  initMQTTPush();
+  lastRestartTime = esp_timer_get_time();
 
-  // output format
-  Serial.println("Temperature(degC)");
+  read_value = analogRead(analog_channel_pin);
+  Serial.print("Dada");
+  Serial.print(read_value);
   
-
+  initMQTTPush();
+  
   startTime = esp_timer_get_time();
   Serial.println("Ending setup");
+  Serial.println("Read \tVolt\tTemperature");
 }
 
 void loop() {
@@ -154,13 +159,18 @@ void log(String message){
 
 void measure_and_report() {
   mmntIndex += 1;
-  float co2, temperature, humidity;
-  uint8_t data[12], counter;
-
   
-  temperature = 12;
+  read_value = analogRead(analog_channel_pin);
+  voltage = (read_value * 3.3 ) / (4095);
+  temperature = (3300.0-(read_value )) / (100.0)+25.0;
   // Write values to serial
-  Serial.println(temperature);
+  // Write values to serial
+  Serial.print(read_value);
+  Serial.print("\t");
+  Serial.print(voltage);
+  Serial.print("\t");
+  Serial.print(temperature);
+  Serial.println();
 
   // MQTT publish
   lastMmntTime = esp_timer_get_time();
@@ -172,6 +182,13 @@ void measure_and_report() {
   dtostrf(temperature, 6, 2, temp_char);
   if (not(client.publish("sensors/temperature2", temp_char))){
     Serial.println("Temperature Publish failed");
+  }
+
+  char message_buff[18];
+  String pubString = String(read_value);
+  pubString.toCharArray(message_buff, pubString.length()+1);
+  if (not(client.publish("sensors/analog_raw", message_buff))){
+    Serial.println("Analog raw Publish failed");
   }
  
 
