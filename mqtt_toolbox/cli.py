@@ -5,26 +5,44 @@ import numpy as np
 import time
 
 
-def fake(client, topic="sensors/temperature"):
-    while True:
-        print("Publishing")
-        client.publish(topic, calc_temp())
-        time.sleep(2)
+def gen_time():
+    return time.strftime("%H:%M:%S", time.localtime())
 
 
-def calc_temp(amplitude=5, mean=20, offset=0, period=900):
+def gen_temp():
     """
     amplitude: amplitude of temperature changes
     mean: mean of the simulated temperature
     offset: offset of the signal in seconds
     period: periond time in seconds
     """
+    amplitude = 5
+    mean = 20
+    offset = 0
+    period = 900
     temp = np.sin((time.time() + offset) % (period) * 2 * np.pi) * amplitude + mean
     return temp
 
 
+def fake(client, data_type="temperature", topic="sensors/temperature"):
+    if data_type == "temperature":
+        data_generator = gen_temp
+    elif data_type == "time":
+        data_generator = gen_time
+
+    while True:
+        print("Publishing")
+        if data_type == "temperature":
+            client.publish(topic, gen_temp())
+        elif data_type == "time":
+            client.publish(topic, gen_time())
+        time.sleep(2)
+
+
 def on_message(client, userdata, msg):
     print(msg.topic + " " + str(msg.payload))
+
+
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code " + str(rc))
     if rc == 5:
@@ -46,6 +64,7 @@ def cli():
     parser = argparse.ArgumentParser(description='Do basic MQTT operations')
     parser.add_argument('action', choices=['sub', 'pub', 'fake'], help="")
     parser.add_argument('-t', '--topic', help="The MQTT topic")
+    parser.add_argument('--type', help="The type of data to fake")
     parser.add_argument('-b', '--broker', help="Hostname of the MQTT broker")
     parser.add_argument('--port', type=int, default=1883, help="The MQTT brokers port (default: 1883)")
     parser.add_argument('-u', '--user', help="User for the MQTT broker")
