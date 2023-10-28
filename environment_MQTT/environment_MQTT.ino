@@ -1,4 +1,4 @@
-#include "esp_timer.h"
+  #include "esp_timer.h"
 #include "secrets.h"
 
 #include <Wire.h>
@@ -28,6 +28,16 @@ static int64_t mmntIndex = 0;
 bool calibrationNeeded = false;
 
 int errorCounter= 0;
+
+// LIGHT SWITCH
+const int LIGHT_PIN_DIGITAL= 32;
+
+const int LED_4 = 33;
+const int LED_3 = 25;
+const int LED_2 = 26;
+const int LED_1 = 27;
+
+
 
 
 void disconnect() {
@@ -102,52 +112,7 @@ void initMQTTPush(){
 }
 
 
-void setup() {
-  lastRestartTime = esp_timer_get_time();
-  Serial.begin(115200);
-  // wait for serial connection from PC
-  // comment the following line if you'd like the output
-  // without waiting for the interface being ready
-  while(!Serial);
-  initMQTTPush();
 
-  // output format
-  Serial.println("CO2(ppm)\tTemperature(degC)\tRelativeHumidity(percent)");
-  
-  // init I2C
-  Wire.begin();
-
-  // wait until sensors are ready, > 1000 ms according to datasheet
-  delay(1000);
-  
-  // start scd measurement in periodic mode, will update every 2 s
-  Wire.beginTransmission(SCD_ADDRESS);
-  //start_periodic_measurement split in two write commands
-  Wire.write(0x21);
-  Wire.write(0xb1);
-  Wire.endTransmission();
-
-  // wait for first measurement to be finished
-  delay(5000);
-  startTime = esp_timer_get_time();
-  Serial.println("Ending setup");
-}
-
-void loop() {
-  if (errorCounter > 10) {
-    Serial.println("errorCounter > 10: Restarting");
-    disconnect();
-    initMQTTPush();
-  }
-  if (esp_timer_get_time() - lastMmntTime >= mmntIntervalUs) {
-    measure_and_report();
-  }
-  if (esp_timer_get_time() - lastRestartTime >= restartIntervalUs) {
-    restart();
-  }
-
-  delay(3);
-}
 
 void log(String message){
   time_t now;
@@ -166,6 +131,27 @@ void log(String message){
   log_message += "] ";
   log_message += message;
   Serial.println(log_message);
+}
+
+
+void light_switch_check() {
+  int digitalValue = digitalRead(LIGHT_PIN_DIGITAL);
+  if (digitalValue < 1) {
+    for (int i = 0; i<5; i++) {
+      if (digitalRead(LIGHT_PIN_DIGITAL)){
+        return;
+      }
+    }
+    Serial.println("Light toggle");
+    toggle_light();
+  }
+}
+
+void toggle_light() {
+  if (not(client.publish("cmnd/tasmota_plug_1/Power", "TOGGLE"))){
+    Serial.println("Toggling the light failed");
+  }
+  delay(1500); // Do nothing for 1 seconds to avoid toggling on/off by accident.
 }
 
 void calibrate() {
@@ -199,10 +185,36 @@ void calibrate() {
 
 }
 
+void turn_light_to_temperature(float temperature) {
+  bool status_1 = LOW;
+  bool status_2 = LOW;
+  bool status_3 = LOW;
+  bool status_4 = LOW;
+  
+  if (temperature < 17) {
+    status_1 = HIGH;
+  }
+  else if (temperature < 18) {
+    status_2 = HIGH;
+  }
+  else if (temperature < 19) {
+    status_3 = HIGH;
+  }
+  else {
+    status_4 = HIGH;
+  }
+  
+    digitalWrite(LED_1, status_1);
+    digitalWrite(LED_2, status_2);
+    digitalWrite(LED_3, status_3);
+    digitalWrite(LED_4, status_4);
+}
+
 void measure_and_report() {
   mmntIndex += 1;
   float co2, temperature, humidity;
   uint8_t data[12], counter;
+
 
   // send read data command
   Wire.beginTransmission(SCD_ADDRESS);
@@ -235,6 +247,10 @@ void measure_and_report() {
   Serial.print("\t");
   Serial.print(humidity);
   Serial.println();
+
+  
+  // Turn on a light that corresponds to the temperature measured
+  turn_light_to_temperature(temperature);
   
   // MQTT publish
   lastMmntTime = esp_timer_get_time();
@@ -264,4 +280,60 @@ void measure_and_report() {
   if (not(client.publish("sensors/mmntIndex", mmntIndex_char))){
     Serial.println("mmntIndex publish failed");
   }
+}
+
+
+void setup() {
+  lastRestartTime = esp_timer_get_time();
+  Serial.begin(115200);
+  // wait for serial connection from PC
+  // comment the following line if you'd like the output
+  // without waiting for the interface being ready
+  while(!Serial);
+  initMQTTPush();
+
+  // output format
+  Serial.println("CO2(ppm)\tTemperature(degC)\tRelativeHumidity(percent)");
+  
+  // init I2C
+  Wire.begin();
+
+  // wait until sensors are ready, > 1000 ms according to datasheet
+  delay(1000);
+  
+  // start scd measurement in periodic mode, will update every 2 s
+  Wire.beginTransmission(SCD_ADDRESS);
+  //start_periodic_measurement split in two write commands
+  Wire.write(0x21);
+  Wire.write(0xb1);
+  Wire.endTransmission();
+
+  pinMode(LIGHT_PIN_DIGITAL, INPUT_PULLUP);
+  pinMode(LED_1, OUTPUT);
+  pinMode(LED_2, OUTPUT);
+  pinMode(LED_3, OUTPUT);
+  pinMode(LED_4, OUTPUT);
+  
+  // wait for first measurement to be finished
+  delay(5000);
+  startTime = esp_timer_get_time();
+  Serial.println("Ending setup");
+}
+
+void loop() {
+  if (errorCounter > 10) {
+    Serial.println("errorCounter > 10: Restarting");
+    disconnect();
+    initMQTTPush();
+  }
+  if (esp_timer_get_time() - lastMmntTime >= mmntIntervalUs) {
+    measure_and_report();
+  }
+  if (esp_timer_get_time() - lastRestartTime >= restartIntervalUs) {
+    restart();
+  }
+  light_switch_check();
+  
+
+  delay(3);
 }
