@@ -1,4 +1,4 @@
-  #include "esp_timer.h"
+#include "esp_timer.h"
 #include "secrets.h"
 
 #include <Wire.h>
@@ -30,7 +30,7 @@ bool calibrationNeeded = false;
 int errorCounter= 0;
 
 // LIGHT SWITCH
-const int LIGHT_PIN_DIGITAL= 32;
+const int LIGHT_PIN_DIGITAL= 33;
 
 const int LED_4 = 33;
 const int LED_3 = 25;
@@ -136,9 +136,10 @@ void log(String message){
 
 void light_switch_check() {
   int digitalValue = digitalRead(LIGHT_PIN_DIGITAL);
-  if (digitalValue < 1) {
+  if (digitalValue == LOW) {
     for (int i = 0; i<5; i++) {
-      if (digitalRead(LIGHT_PIN_DIGITAL)){
+      if (digitalRead(LIGHT_PIN_DIGITAL) == HIGH){
+        // Abort ifsignal is unstable
         return;
       }
     }
